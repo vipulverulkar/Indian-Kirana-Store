@@ -251,9 +251,17 @@ Health check: `GET /api/health` → `{"status":"ok","db":"up","db_mode":"sqlite"
 
 ## Docker (PostgreSQL)
 
-The Docker image is PostgreSQL-only. For SQLite use the standalone or desktop
-build above. The image runs gunicorn, waits for Postgres, applies `init_db.sql`
+The Docker image runs gunicorn, waits for Postgres, applies `init_db.sql`
 (idempotent) and seeds demo data on every boot.
+
+#### Automated Docker Builds (GitHub Container Registry)
+The `.github/workflows/docker.yml` workflow automatically builds and pushes
+the container image to GitHub Container Registry (`ghcr.io`) on every push to `main`
+and release tag:
+
+```bash
+docker pull ghcr.io/vipulverulkar/indian-kirana-store:latest
+```
 
 ### Option 0 — Local Postgres via compose (easiest)
 
