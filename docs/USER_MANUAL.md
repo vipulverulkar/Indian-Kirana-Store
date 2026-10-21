@@ -1,12 +1,18 @@
 # KiranaPro — User Manual
 
-Enterprise kirana store management: GST billing, inventory, Udhaar Khata (credit ledger),
-returns, expenses and Z-reports. Single-page app at `http://localhost:5000`.
+Enterprise kirana store management: GST billing, inventory, Udhaar Khata
+(credit ledger), returns, expenses and Z-reports. Runs as a local web app at
+`http://localhost:5000` (or the port shown at startup) or as the KiranaPro
+desktop app.
+
+**Version:** `APP_VERSION` (default `1.0.0`) · **License:** GPL-3.0 ·
+**Repository:** https://github.com/vipulverulkar/Indian-Kirana-Store
 
 **Appearance:** the header has a 🌙/☀️ toggle for light/dark mode plus 4 accent
 colour dots (Emerald, Indigo, Amber, Rose). The **Aa** menu next to it adjusts
 text size (80–120%) and switches Comfortable/Compact density. All choices are
-remembered per browser.
+remembered per browser. The login screen and sidebar also show the app version,
+GPL-3.0 license and developer credits.
 
 ## Screenshots
 
@@ -18,14 +24,38 @@ remembered per browser.
 |---|---|
 | ![Billing](screenshots/03-billing.png) | ![Database](screenshots/04-database.png) |
 
+## Before you start — running KiranaPro
+
+| Mode | How to start | Database |
+|---|---|---|
+| Standalone from source | `python app.py` after `pip install -r requirements.txt` | SQLite file, auto-created and seeded on first launch |
+| Desktop app | Run `dist/KiranaPro` (`dist\KiranaPro.exe` on Windows), or build with `build_desktop.sh` / `build_desktop.bat` | SQLite in the per-user data folder |
+| PostgreSQL | Set `DB_BACKEND=postgres` + `DATABASE_URL` or `DB_*` in `.env`, apply `init_db.sql`, run `seed.py`, then `app.py` | Local or remote PostgreSQL |
+
+Standalone first run creates the `admin` / `staff` logins and the product
+catalog automatically. `python seed.py` is optional in SQLite mode; it is
+needed for PostgreSQL installs and adds demo customers/categories.
+
+Desktop data locations (override with `KIRANA_DATA_DIR`):
+
+- Windows: `%LOCALAPPDATA%\KiranaPro`
+- Linux: `~/.local/share/kiranapro`
+- macOS: `~/Library/Application Support/KiranaPro`
+
+Back up from **Master Data → Backup & Restore** before moving to another
+machine or reinstalling.
+
 ## 1. Logging in
 
-- Open `/login`. Demo logins (created by `python seed.py`):
+- Open the URL shown at startup (default `http://localhost:5000/login`), or
+  the KiranaPro desktop window. Default logins — auto-created on a fresh
+  standalone install and by `python seed.py` for PostgreSQL:
   | User | Password | Role |
   |------|----------|------|
   | `admin` | `admin123` | Owner — everything |
   | `staff` | `staff123` | Counter — billing, Udhaar, orders/returns, read-only inventory |
 - Wrong credentials show an error; the session keeps you logged in until **Logout**.
+- Change the default passwords from **Users** before putting real data in.
 
 ## 2. Roles & permissions
 
@@ -116,9 +146,12 @@ Scan-first counter flow:
     distributor on a product to add one here) — handy for the low-stock
     purchase order.
   - **💾 Backup & Restore:** ⬇ export all business data as SQL (.sql dump)
-    or CSV (.zip, one file per table; passwords never included), ⬆ restore
-    either format — it replaces all current data (login accounts are kept).
+    or CSV (.zip, one file per table; passwords and database settings never
+    included), ⬆ restore either format — it replaces all current data (login
+    accounts are kept). SQLite standalone backups need no `pg_dump`/`psql`.
     Download a fresh backup before restoring.
+    The target install must already have the same login accounts/user IDs as
+    the backup, because customers, bills and expenses reference them.
 
 ### 3.6 Orders & Returns (📜)
 - Order history (newest first): id, date, customer, amount, mode, Paid/Pending status.
@@ -150,7 +183,7 @@ The single place for all store defaults (persisted in DB, applied immediately):
 | 🧾 Billing | Default payment mode, max discount % (0–90), UPI ID (scan-to-pay QR on invoices) |
 | ⭐ Loyalty & Udhaar | Default credit limit for new customers, spend-per-point (₹X = 1 pt), max redeem % of bill |
 | 📦 Inventory | Default unit, default GST %, default low-stock threshold |
-| 🗄️ Database | **Local** (server `.env` config) vs **Remote** (cloud Postgres URL): Test Connection, then Switch Database. Switching never moves existing data — each DB keeps its own bills; login accounts sync automatically. The remote URL is stored on this server only and never shown again. A dead remote never blocks switching back. |
+| 🗄️ Database | **Local** (the server `.env` database — SQLite or PostgreSQL) vs **Remote** (PostgreSQL URL only). The remote URL box and Test button appear only when **Remote** is selected. Paste a `postgresql://…` URL, **Test Connection**, then **Switch Database**. Switching never moves existing data — each DB keeps its own bills/customers/stock; login accounts sync automatically. The remote URL is stored on this server only and never shown again. A dead remote never blocks switching back to Local. |
 
 `.env` `STORE_*` values only seed first-run blanks — afterwards the menu owns them.
 
@@ -193,9 +226,22 @@ The single place for all store defaults (persisted in DB, applied immediately):
 
 | Symptom | Fix |
 |---|---|
-| `Database error` / degraded health | Check Store Settings → Database tab (active DB reachable?), `.env` (`DATABASE_URL` or `DB_*`), Postgres running, `GET /api/health` |
-| Login fails on fresh install | Run `python seed.py` (creates admin/staff); `--reset-passwords` to restore demo passwords |
+| `Database error` / degraded health | Check Store Settings → Database (active DB reachable?), then `.env` (`DB_BACKEND`, `SQLITE_PATH`, `DATABASE_URL` or `DB_*`), and `GET /api/health`. For standalone, ensure the SQLite folder is writable |
+| Login fails on fresh install | Standalone creates `admin`/`admin123` and `staff`/`staff123` automatically. For PostgreSQL run `python seed.py` (or `--reset-passwords`); check `app_users` is not empty |
+| Remote database switch fails | Use a `postgresql://` URL, check host/port/TLS and that the DB is reachable from this machine. Port `5433` is not assumed — use the actual port |
+| Restore fails with foreign-key/user errors | Restore into an install with the same login accounts/user IDs as the source backup |
+| Desktop app shows an empty store | It uses the per-user data folder, not the project folder. Check `KIRANA_DATA_DIR` and the locations above |
 | Camera scan fails | Serve over localhost/HTTPS; grant camera permission; use manual barcode fallback |
 | CSV import reports skipped rows | Required `name`; check numeric columns; ≤ 2 MB / 2000 rows |
 | Staff can't see a button | Expected — admin-only capability (see §2) |
 | Logo missing on invoice | Upload via Store Settings; or set `STORE_LOGO` URL |
+
+## 7. Version, credits & license
+
+- **Version:** set `APP_VERSION` in `.env` (default `1.0.0`). It appears on the
+  login screen, sidebar, `/api/health` and `/api/meta`.
+- **Developer:** Vipul Verulkar · India · <vipulverulkar@gmail.com>
+- **License:** GNU General Public License v3.0 (GPL-3.0). The full text is in
+  [`../LICENSE`](../LICENSE); the license label can be overridden with
+  `APP_LICENSE`.
+- **Source & issues:** https://github.com/vipulverulkar/Indian-Kirana-Store

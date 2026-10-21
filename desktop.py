@@ -66,13 +66,13 @@ def _ensure_secret(data_dir):
         os.environ.setdefault("SECRET_KEY", secrets.token_hex(32))
 
 
-def _run_window(url):
+def _run_window(url, title):
     try:
         import webview
     except Exception:
         return False
     try:
-        webview.create_window(f"KiranaPro v{app_version()}", url, width=1360, height=900,
+        webview.create_window(title, url, width=1360, height=900,
                               min_size=(1024, 700))
         webview.start()
         return True
@@ -105,13 +105,14 @@ def main(argv=None):
     server = make_server("127.0.0.1", port, app, threaded=True)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{port}"
+    window_title = f"KiranaPro v{app_version()}"
 
     print(f"KiranaPro is running at {url}")
     print(f"Data directory: {DATA_DIR}")
     print("Close the KiranaPro window (or press Ctrl+C) to quit.")
 
     try:
-        if args.no_browser or _run_window(url):
+        if args.no_browser or _run_window(url, window_title):
             if args.no_browser:
                 while True:
                     time.sleep(1)

@@ -2,8 +2,11 @@
 
 All routes live in the kirana/ package (one blueprint module per area):
     kirana/auth.py      - login, logout, session, role guards
+    kirana/activity.py  - admin audit trail
+    kirana/users.py     - login-account management
     kirana/core.py      - dashboard shell (/), health check
-    kirana/store.py     - store info, settings API, logo upload
+    kirana/store.py     - store info, settings API, logo upload, backup/restore
+    kirana/config.py    - version, license and developer metadata
     kirana/settings.py  - persistent store defaults (store_settings table)
     kirana/products.py  - products, categories, inventory, CSV import/export
     kirana/customers.py - customers, Udhaar ledger, repayments

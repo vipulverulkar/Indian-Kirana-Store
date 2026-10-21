@@ -416,8 +416,6 @@ class SQLiteCursor:
 
 
 class SQLiteConnection:
-    backend = "sqlite"
-
     def __init__(self, path):
         if path != ":memory:":
             parent = os.path.dirname(path)

@@ -28,8 +28,8 @@ from .reports import reports_bp
 from .store import store_bp
 
 
-# ---------- JSON: handle Decimal / datetime from psycopg2 ----------
-class PostgresJSONProvider(DefaultJSONProvider):
+# ---------- JSON: handle Decimal / datetime from database rows ----------
+class KiranaJSONProvider(DefaultJSONProvider):
     def default(self, obj):
         if isinstance(obj, Decimal):
             return float(obj)
@@ -51,8 +51,7 @@ def create_app():
         SESSION_COOKIE_SECURE=os.getenv("COOKIE_SECURE", "0") == "1",
     )
 
-    app.json_provider_class = PostgresJSONProvider
-    app.json = PostgresJSONProvider(app)
+    app.json = KiranaJSONProvider(app)
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(activity_bp)

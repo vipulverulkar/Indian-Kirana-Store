@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-COPY app.py seed.py init_db.sql init_db_sqlite.sql migrate_features2.sql migrate_legacy_catchup.sql migrate_categories.sql migrate_settings.sql migrate_activity.sql migrate_purchases.sql ./
+COPY app.py seed.py init_db.sql init_db_sqlite.sql ./
 COPY kirana/ ./kirana/
 COPY templates/ ./templates/
 COPY static/ ./static/

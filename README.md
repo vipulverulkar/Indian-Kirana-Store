@@ -1,7 +1,8 @@
 # 🏪 KiranaPro — Enterprise Kirana Store Management
 
 > 📖 End-user guide: [`docs/USER_MANUAL.md`](docs/USER_MANUAL.md) ·
-> 🏗️ Architecture & diagrams: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+> 🏗️ Architecture & diagrams: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) ·
+> 🌐 GitHub: https://github.com/vipulverulkar/Indian-Kirana-Store
 
 A Flask + SQLite/PostgreSQL billing, inventory, and credit-ledger (Udhaar Khata) app for
 Indian grocery stores. Handles GST billing, discounts, loyalty points, customer
@@ -22,7 +23,7 @@ owners (admin) and counter staff.
 - Barcode scan (camera) + manual entry, live search (name/barcode), category filter
 - Customer picker dropdown (or phone fetch / + New) with live dues + loyalty badge
 - Cart with GST (CGST/SGST split) computed per item
-- Bill discount % (0–50%) + loyalty redemption (1 pt = ₹1, capped at 20% of bill)
+- Bill discount % (default cap 50%, configurable) + loyalty redemption (1 pt = ₹1, capped at 20% of bill by default)
 - Payment modes: Cash, UPI, Card, Udhaar (credit)
 - Printable GST invoice + WhatsApp share (invoice text / dues reminders)
 - Keyboard shortcuts: `Ctrl+Enter` checkout, `Ctrl+S` search, `Esc` clear/close
@@ -63,9 +64,10 @@ owners (admin) and counter staff.
 
 **Platform**
 - Pagination everywhere (`?page=&per_page=`, sizes 15/25/50/100, remembered per table)
-- Roles: `admin` (everything) vs `staff` (billing, orders, customers, expenses-entry, reports-lite)
+- Roles: `admin` (everything) vs `staff` (billing, orders, customers, read-only inventory)
 - Themes: light/dark mode + 4 accent colours + text-size (80–120%) and Comfortable/Compact density (header controls, remembered per browser)
 - JSON-safe Decimal/datetime serialization; validated inputs with 400s (no 500s on bad input)
+- Version, license and developer credits shown on login + sidebar; configurable via `APP_VERSION`, `APP_LICENSE`, `DEVELOPER_*`
 
 ## Tech stack
 
@@ -73,10 +75,10 @@ owners (admin) and counter staff.
 |----------|---------------------------------------------|
 | Backend  | Flask 3, Werkzeug security; psycopg2 for PostgreSQL |
 | Database | SQLite (standalone, no server) or PostgreSQL — local/external (`DATABASE_URL` or `DB_*` vars); remote databases are PostgreSQL |
-| Deploy   | Dockerfile + `docker-compose.yml` (gunicorn, auto-migrate + seed on boot) |
+| Deploy   | Standalone SQLite/desktop build, or Dockerfile + `docker-compose.yml` (PostgreSQL + gunicorn) |
 | Desktop  | PyInstaller one-file launcher (`desktop.py`), optional `pywebview` window |
 | Frontend | Tailwind CDN, vanilla JS, Chart.js, html5-qrcode |
-| Server   | `app.py` directly, or gunicorn (in requirements) |
+| Server   | `app.py`/`desktop.py`, or gunicorn (in requirements) |
 
 ## Project structure
 
@@ -108,6 +110,7 @@ owners (admin) and counter staff.
 ├── migrate_categories.sql     # categories table + backfill
 ├── migrate_settings.sql       # store_settings table (Settings menu)
 ├── migrate_activity.sql       # activity_log table (audit trail)
+├── migrate_purchases.sql      # procurement log table
 ├── seed.py                    # idempotent demo data (users, customers, categories)
 ├── LICENSE                    # GNU GPL v3.0
 ├── requirements.txt
@@ -146,7 +149,7 @@ To use a different file, set `SQLITE_PATH=/absolute/path/kirana.db` (or
 `DATABASE_URL=sqlite:///kirana.db`). Keep `DB_BACKEND=sqlite` explicit so a
 stray `DB_NAME` in the environment cannot override it.
 
-### 2b. Desktop app (Windows / Linux)
+### 3. Desktop app (Windows / Linux)
 
 Build a single-file executable that starts KiranaPro locally and opens it in a
 native window (if `pywebview` is installed) or the default browser. It binds
@@ -172,7 +175,7 @@ Data locations (override with `KIRANA_DATA_DIR`):
 To use PostgreSQL in the desktop build, place a `.env` next to the executable
 with `DB_BACKEND=postgres` and either `DATABASE_URL` or the `DB_*` variables.
 
-### 3. PostgreSQL mode (local server or split vars)
+### 4. PostgreSQL mode (local server or split vars)
 
 `.env` (see `.env.example` — the source of truth for all variables):
 
@@ -199,7 +202,7 @@ env file are only **first-run fallbacks**. Once the app runs, the
 **Store Settings** menu (admin, sidebar) owns all store defaults, persisted
 in the `store_settings` table:
 - **Store:** name, location, address, phone, invoice footer + logo upload
-  (PNG/JPG/WEBP/GIF, max 2 MB, `static/uploads/`). Name/address/phone/footer
+  (PNG/JPG/WEBP/GIF, max 2 MB, writable data dir — `static/uploads/` in source/Docker). Name/address/phone/footer
   print on GST invoices (print + WhatsApp) and in the sidebar.
 - **Billing:** default payment mode (Cash/UPI/Card/Udhaar), max discount %
 - **Loyalty & Udhaar:** default credit limit for new customers, spend-per-point
@@ -210,14 +213,14 @@ in the `store_settings` table:
   (admin only) saves them. Checkout enforces max-discount and redeem-cap;
   billing/product/customer forms prefill the defaults.
 
-### 4a. Fresh PostgreSQL database
+### 5a. Fresh PostgreSQL database
 
 ```bash
 psql -h localhost -U kiranapro -d kiranapro -f init_db.sql
 .venv/bin/python seed.py
 ```
 
-### 4b. Existing PostgreSQL database (upgrade in order)
+### 5b. Existing PostgreSQL database (upgrade in order)
 
 ```bash
 psql -h localhost -U kiranapro -d kiranapro -f migrate_features2.sql
@@ -225,23 +228,25 @@ psql -h localhost -U kiranapro -d kiranapro -f migrate_legacy_catchup.sql
 psql -h localhost -U kiranapro -d kiranapro -f migrate_categories.sql
 psql -h localhost -U kiranapro -d kiranapro -f migrate_settings.sql
 psql -h localhost -U kiranapro -d kiranapro -f migrate_activity.sql
+psql -h localhost -U kiranapro -d kiranapro -f migrate_purchases.sql
 .venv/bin/python seed.py
 ```
 
-(`init_db.sql` already contains all four migrations appended, so new installs
-need only step 4a.)
+(`init_db.sql` already contains all migrations appended, so new installs need
+only step 5a.)
 
-### 5. Run
+### 6. Run
 
 ```bash
 .venv/bin/python app.py   # http://localhost:5000
 ```
 
-Health check: `GET /api/health` → `{"status":"ok","db":"up"}`.
+Health check: `GET /api/health` → `{"status":"ok","db":"up","db_mode":"sqlite","version":"1.0.0","target":{...}}`.
 
-## Docker
+## Docker (PostgreSQL)
 
-The image runs gunicorn, waits for Postgres, applies `init_db.sql`
+The Docker image is PostgreSQL-only. For SQLite use the standalone or desktop
+build above. The image runs gunicorn, waits for Postgres, applies `init_db.sql`
 (idempotent) and seeds demo data on every boot.
 
 ### Option 0 — Local Postgres via compose (easiest)
@@ -368,7 +373,7 @@ All `/api/*` return JSON; unauthenticated → 401. List endpoints return
 | GET | `/api/dashboard/stats` | admin | weekly, top products, stock value |
 | GET | `/api/inventory/low-stock?page=&per_page=` | admin |  |
 | GET | `/api/inventory/purchase-order` | admin | PO CSV download |
-| GET | `/api/me`, `/api/health` | any/open | session info, DB check |
+| GET | `/api/me`, `/api/health` | any/open | session info; health returns status, DB target and app version |
 | GET/POST | `/api/users` | admin | login accounts (list/create; min 6-char password) |
 | PUT/DELETE | `/api/users/<id>` | admin | edit / reset password / delete; can't self-demote, self-delete or remove the last admin |
 | GET/PUT | `/api/settings` | any/admin✎ | store defaults (Settings menu); PUT admin only |
