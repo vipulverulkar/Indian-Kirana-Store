@@ -1,0 +1,55 @@
+# Local stack: app + throwaway Postgres. One command:
+#   docker compose up --build
+# → http://localhost:5000  (admin/admin123, staff/staff123 — change via SEED_* in .env)
+#
+# For REMOTE managed Postgres (Neon / Supabase / RDS / Render) do NOT use
+# this file — run the app container alone with DATABASE_URL instead:
+#   docker build -t kiranapro .
+#   docker run --env-file .env -p 5000:5000 -v kiranapro_uploads:/app/static/uploads kiranapro
+# with .env containing:
+#   DATABASE_URL=postgresql://user:password@host:5432/dbname?sslmode=require
+#   DB_SSLMODE=require
+
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-kiranapro}
+      POSTGRES_USER: ${DB_USER:-kiranapro}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-kiranapro}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-kiranapro}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      # Inside compose the database hostname is the `db` service.
+      # DATABASE_URL / DB_SSLMODE are blanked so a remote-oriented .env
+      # can't accidentally bypass the local db (or force TLS on it).
+      DB_HOST: db
+      DATABASE_URL: ""
+      DB_SSLMODE: ""
+      DB_BACKEND: postgres
+      SQLITE_PATH: ""
+      PORT: ${PORT:-5000}
+    ports:
+      - "${PORT:-5000}:5000"
+    volumes:
+      - kiranapro_uploads:/app/static/uploads
+
+volumes:
+  pgdata:
+  kiranapro_uploads:
