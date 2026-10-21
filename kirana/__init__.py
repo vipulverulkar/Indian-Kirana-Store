@@ -16,6 +16,7 @@ else:
 from .auth import auth_bp
 from .config import (APP_LICENSE, APP_NAME, DEVELOPER_CONTACT,
                      DEVELOPER_LOCATION, DEVELOPER_NAME, app_version)
+from .constants import DEFAULT_SECRET_KEY
 from .activity import activity_bp
 from .core import core_bp
 from .users import users_bp
@@ -44,7 +45,7 @@ def create_app():
     app = Flask(__name__,
                 template_folder=os.path.join(BASE_DIR, "templates"),
                 static_folder=os.path.join(BASE_DIR, "static"))
-    app.secret_key = os.getenv("SECRET_KEY", "kirana-super-secret-key")
+    app.secret_key = os.getenv("SECRET_KEY", DEFAULT_SECRET_KEY)
     app.config.update(
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",

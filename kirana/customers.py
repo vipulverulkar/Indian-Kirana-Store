@@ -4,6 +4,13 @@ from decimal import Decimal
 from flask import Blueprint, jsonify, request, session
 
 from .auth import login_required
+from .constants import (
+    DEFAULT_REPAYMENT_REMARK,
+    MAX_LEN_PHONE_MAX,
+    MAX_LEN_PHONE_MIN,
+    ROLE_ADMIN,
+    TXN_CREDIT,
+)
 from .db import UNIQUE_ERRORS, db_cursor
 from .settings import get_decimal_setting
 from .utils import fmt_money, get_pagination, page_meta, to_decimal
@@ -39,8 +46,8 @@ def manage_customers():
     phone = (data.get('phone') or '').strip().replace(' ', '')
     if not name or not phone:
         return jsonify({"error": "Name and phone are required"}), 400
-    if len(phone) < 6 or len(phone) > 15:
-        return jsonify({"error": "Phone must be 6–15 characters"}), 400
+    if len(phone) < MAX_LEN_PHONE_MIN or len(phone) > MAX_LEN_PHONE_MAX:
+        return jsonify({"error": f"Phone must be {MAX_LEN_PHONE_MIN}–{MAX_LEN_PHONE_MAX} characters"}), 400
     try:
         default_limit = get_decimal_setting("default_credit_limit")
         credit_limit = to_decimal(data.get('credit_limit', default_limit), 'credit_limit')
@@ -72,8 +79,8 @@ def customer_detail(cid):
         phone = (data.get('phone') or '').strip().replace(' ', '')
         if not name or not phone:
             return jsonify({"error": "Name and phone are required"}), 400
-        if len(phone) < 6 or len(phone) > 15:
-            return jsonify({"error": "Phone must be 6–15 characters"}), 400
+        if len(phone) < MAX_LEN_PHONE_MIN or len(phone) > MAX_LEN_PHONE_MAX:
+            return jsonify({"error": f"Phone must be {MAX_LEN_PHONE_MIN}–{MAX_LEN_PHONE_MAX} characters"}), 400
         try:
             with db_cursor(commit=True) as cur:
                 cur.execute("SELECT * FROM customers WHERE customer_id=%s", (cid,))
@@ -82,7 +89,7 @@ def customer_detail(cid):
                     return jsonify({"error": "Customer not found"}), 404
                 limit = Decimal(str(row['credit_limit']))
                 if data.get('credit_limit') not in (None, ''):
-                    if session.get('role') != 'admin':
+                    if session.get('role') != ROLE_ADMIN:
                         return jsonify({"error": "Only admin can change credit limit"}), 403
                     try:
                         limit = to_decimal(data.get('credit_limit'), 'credit_limit')
@@ -102,7 +109,7 @@ def customer_detail(cid):
         except Exception as e:
             return jsonify({"error": str(e)}), 400
     # DELETE - admin only
-    if session.get('role') != 'admin':
+    if session.get('role') != ROLE_ADMIN:
         return jsonify({"error": "Admin access required"}), 403
     try:
         with db_cursor(commit=True) as cur:
@@ -189,7 +196,7 @@ def repayment():
                 raise Exception(f"Amount exceeds dues (₹{customer['current_balance']})")
             cur.execute(
                 "INSERT INTO udhaar_ledger (customer_id, amount, transaction_type, remarks) VALUES (%s, %s, %s, %s)",
-                (customer_id, amount, 'Credit', data.get('remarks') or 'Cash repayment (Jama)')
+                (customer_id, amount, TXN_CREDIT, data.get('remarks') or DEFAULT_REPAYMENT_REMARK)
             )
             cur.execute("UPDATE customers SET current_balance = current_balance - %s WHERE customer_id = %s",
                         (amount, customer_id))

@@ -5,6 +5,18 @@ import io
 from flask import Blueprint, Response, jsonify, request, session
 
 from .auth import admin_required, login_required
+from .constants import (
+    BARCODE_MAX_RETRIES,
+    BARCODE_PREFIX,
+    MAX_GST_SLAB,
+    MAX_IMPORT_BYTES,
+    MAX_IMPORT_ROWS,
+    MAX_LEN_BILL_NO,
+    MAX_LEN_CATEGORY,
+    MAX_LEN_VENDOR,
+    MIN_GST_SLAB,
+    ROLE_ADMIN,
+)
 from .db import FK_ERRORS, UNIQUE_ERRORS, db_cursor
 from .settings import SETTING_DEFAULTS, get_decimal_setting, get_setting
 from .utils import ensure_category, get_pagination, page_meta, to_decimal
@@ -13,12 +25,10 @@ products_bp = Blueprint("products", __name__)
 
 PRODUCT_FIELDS = ('name', 'unit', 'stock_quantity', 'cost_price', 'unit_price', 'gst_slab')
 
-BARCODE_PREFIX = "KP"
-
 
 def _strip_cost_for_staff(rows):
     """Staff (billing terminal) must never see margins: drop cost_price."""
-    if session.get('role') == 'admin':
+    if session.get('role') == ROLE_ADMIN:
         return rows
     if isinstance(rows, dict):
         rows.pop('cost_price', None)
@@ -36,8 +46,10 @@ def auto_barcode(cur):
     about catalog size/order. The 6-digit legacy scheme (KP000028) can never
     collide with this 8-digit one; the DB check covers manual codes too."""
     import random
-    for _ in range(20):
-        code = f"{BARCODE_PREFIX}{random.randint(0, 99999999):08d}"
+    max_value = 10 ** BARCODE_DIGIT_COUNT - 1
+    fmt = f"{{:0{BARCODE_DIGIT_COUNT}d}}"
+    for _ in range(BARCODE_MAX_RETRIES):
+        code = f"{BARCODE_PREFIX}{fmt.format(random.randint(0, max_value))}"
         cur.execute("SELECT 1 FROM products WHERE barcode=%s", (code,))
         if not cur.fetchone():
             return code
@@ -51,14 +63,15 @@ def validate_product_payload(data):
     if not name:
         raise ValueError("Product name is required")
     cleaned['name'] = name
-    for f in ('barcode', 'unit', 'distributor_name', 'category'):
-        if f in data:
-            v = data.get(f)
-            cleaned[f] = (str(v).strip() or None) if v is not None else None
+    # Handle 'unit' separately (required + validation) — not in the generic loop below.
     unit = str(data.get('unit') or '').strip()
     if not unit:
         raise ValueError("Unit is required (e.g. kg, packet, L, piece)")
     cleaned['unit'] = unit
+    for f in ('barcode', 'distributor_name', 'category'):
+        if f in data:
+            v = data.get(f)
+            cleaned[f] = (str(v).strip() or None) if v is not None else None
     for num_field in ('stock_quantity', 'cost_price', 'unit_price', 'gst_slab', 'min_threshold'):
         if num_field in data and data.get(num_field) not in (None, ''):
             cleaned[num_field] = to_decimal(data[num_field], num_field)
@@ -66,15 +79,15 @@ def validate_product_payload(data):
         if f not in cleaned:
             raise ValueError(f"Missing required field: {f}")
     cleaned.setdefault('min_threshold', get_decimal_setting("default_min_threshold"))
-    if 'gst_slab' in cleaned and (cleaned['gst_slab'] < 0 or cleaned['gst_slab'] > 100):
-        raise ValueError("GST slab must be between 0 and 100")
+    if 'gst_slab' in cleaned and (cleaned['gst_slab'] < MIN_GST_SLAB or cleaned['gst_slab'] > MAX_GST_SLAB):
+        raise ValueError(f"GST slab must be between {MIN_GST_SLAB} and {MAX_GST_SLAB}")
     for f in ('stock_quantity', 'cost_price', 'unit_price'):
         if f in cleaned and cleaned[f] < 0:
             raise ValueError(f"{f} cannot be negative")
     if 'min_threshold' in cleaned and cleaned['min_threshold'] < 0:
         raise ValueError("min_threshold cannot be negative")
-    if cleaned.get('category') and len(cleaned['category']) > 100:
-        raise ValueError("Category too long (max 100)")
+    if cleaned.get('category') and len(cleaned['category']) > MAX_LEN_CATEGORY:
+        raise ValueError(f"Category too long (max {MAX_LEN_CATEGORY})")
     return cleaned
 
 
@@ -108,7 +121,7 @@ def manage_products():
             return jsonify({"error": str(e)}), 500
 
     # POST - admin only
-    if session.get('role') != 'admin':
+    if session.get('role') != ROLE_ADMIN:
         return jsonify({"error": "Admin access required"}), 403
     data = request.get_json(silent=True) or {}
     try:
@@ -149,7 +162,7 @@ def manage_products():
 @products_bp.route('/api/products/<int:pid>', methods=['PUT', 'DELETE'])
 @login_required
 def product_detail(pid):
-    if session.get('role') != 'admin':
+    if session.get('role') != ROLE_ADMIN:
         return jsonify({"error": "Admin access required"}), 403
     try:
         if request.method == 'PUT':
@@ -207,7 +220,7 @@ def stock_in(pid):
     """Add stock (purchase / correction). Body: {quantity, cost_price?, vendor?, bill_no?}
     Every stock-in is logged in the procurement history (purchases) with the
     effective cost, so the same product bought at different rates stays traceable."""
-    if session.get('role') != 'admin':
+    if session.get('role') != ROLE_ADMIN:
         return jsonify({"error": "Admin access required"}), 403
     data = request.get_json(silent=True) or {}
     try:
@@ -217,11 +230,11 @@ def stock_in(pid):
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     vendor = (data.get('vendor') or '').strip() or None
-    if vendor and len(vendor) > 255:
-        return jsonify({"error": "Vendor too long (max 255)"}), 400
+    if vendor and len(vendor) > MAX_LEN_VENDOR:
+        return jsonify({"error": f"Vendor too long (max {MAX_LEN_VENDOR})"}), 400
     bill_no = (data.get('bill_no') or '').strip() or None
-    if bill_no and len(bill_no) > 100:
-        return jsonify({"error": "Bill no too long (max 100)"}), 400
+    if bill_no and len(bill_no) > MAX_LEN_BILL_NO:
+        return jsonify({"error": f"Bill no too long (max {MAX_LEN_BILL_NO})"}), 400
     try:
         with db_cursor(commit=True) as cur:
             cur.execute("SELECT cost_price FROM products WHERE product_id=%s FOR UPDATE", (pid,))
@@ -254,7 +267,7 @@ def stock_in(pid):
 @login_required
 def purchase_history(pid):
     """Procurement history for one product (newest first). Admin only (has cost rates)."""
-    if session.get('role') != 'admin':
+    if session.get('role') != ROLE_ADMIN:
         return jsonify({"error": "Admin access required"}), 403
     page, per_page = get_pagination()
     try:
@@ -280,7 +293,7 @@ def purchase_history(pid):
 @login_required
 def assign_barcode(pid):
     """Auto-assign a random non-sequential barcode to a codeless product."""
-    if session.get('role') != 'admin':
+    if session.get('role') != ROLE_ADMIN:
         return jsonify({"error": "Admin access required"}), 403
     try:
         with db_cursor(commit=True) as cur:
@@ -327,14 +340,14 @@ def manage_categories():
             return jsonify({"error": str(e)}), 500
         return jsonify({"categories": rows})
     # POST - admin only: add a category
-    if session.get('role') != 'admin':
+    if session.get('role') != ROLE_ADMIN:
         return jsonify({"error": "Admin access required"}), 403
     data = request.get_json(silent=True) or {}
     name = (data.get('name') or '').strip()
     if not name:
         return jsonify({"error": "Category name required"}), 400
-    if len(name) > 100:
-        return jsonify({"error": "Category too long (max 100)"}), 400
+    if len(name) > MAX_LEN_CATEGORY:
+        return jsonify({"error": f"Category too long (max {MAX_LEN_CATEGORY})"}), 400
     try:
         with db_cursor(commit=True) as cur:
             cur.execute("INSERT INTO categories (name) VALUES (%s) ON CONFLICT (name) DO NOTHING RETURNING category_id", (name,))
@@ -354,15 +367,15 @@ def manage_categories():
 @products_bp.route('/api/categories/<int:cid>', methods=['PUT', 'DELETE'])
 @login_required
 def category_detail(cid):
-    if session.get('role') != 'admin':
+    if session.get('role') != ROLE_ADMIN:
         return jsonify({"error": "Admin access required"}), 403
     if request.method == 'PUT':
         data = request.get_json(silent=True) or {}
         name = (data.get('name') or '').strip()
         if not name:
             return jsonify({"error": "Category name required"}), 400
-        if len(name) > 100:
-            return jsonify({"error": "Category too long (max 100)"}), 400
+        if len(name) > MAX_LEN_CATEGORY:
+            return jsonify({"error": f"Category too long (max {MAX_LEN_CATEGORY})"}), 400
         try:
             with db_cursor(commit=True) as cur:
                 cur.execute("SELECT name FROM categories WHERE category_id=%s", (cid,))
@@ -480,8 +493,6 @@ def products_export():
                     headers={"Content-Disposition": "attachment; filename=products.csv"})
 
 
-MAX_IMPORT_BYTES = 2 * 1024 * 1024
-MAX_IMPORT_ROWS = 2000
 
 
 @products_bp.route('/api/products/import', methods=['POST'])
@@ -535,11 +546,13 @@ def products_import():
                             (payload['name'], payload.get('barcode'), payload['unit'], payload['stock_quantity'],
                              payload['cost_price'], payload['unit_price'], payload['gst_slab'],
                              payload.get('min_threshold', get_decimal_setting("default_min_threshold")), payload.get('distributor_name'), payload.get('category')))
-                row = cur.fetchone()
-                if row and not payload.get('barcode'):
-                    code = auto_barcode(cur)
-                    cur.execute("UPDATE products SET barcode=%s WHERE product_id=%s", (code, row['product_id']))
-                created += 1
+                inserted = cur.fetchone()  # renamed from 'row' to avoid shadowing the CSV loop variable
+                if inserted:
+                    if not payload.get('barcode'):
+                        code = auto_barcode(cur)
+                        cur.execute("UPDATE products SET barcode=%s WHERE product_id=%s", (code, inserted['product_id']))
+                    created += 1
+                # else: ON CONFLICT DO NOTHING → nothing was inserted, do not count as created
         return jsonify({"status": "success", "created": created, "updated": updated, "skipped": skipped})
     except Exception as e:
         return jsonify({"error": str(e)}), 400

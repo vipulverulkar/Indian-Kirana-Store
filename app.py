@@ -19,8 +19,9 @@ All routes live in the kirana/ package (one blueprint module per area):
 import os
 
 from kirana import create_app
+from kirana.constants import DEFAULT_PORT
 
 app = create_app()
 
 if __name__ == '__main__':
-    app.run(debug=os.getenv("FLASK_DEBUG", "1") == "1", port=int(os.getenv("PORT", 5000)))
+    app.run(debug=os.getenv("FLASK_DEBUG", "1") == "1", port=int(os.getenv("PORT", DEFAULT_PORT)))

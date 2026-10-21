@@ -4,6 +4,7 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request, session
 
 from .auth import admin_required, login_required
+from .constants import MAX_LEN_EXPENSE_CATEGORY, MAX_LEN_EXPENSE_TITLE
 from .db import db_cursor
 from .settings import SETTING_DEFAULTS, get_setting
 from .utils import get_pagination, page_meta, parse_date_yyyy_mm_dd, to_decimal
@@ -45,8 +46,8 @@ def manage_expenses():
     title = (data.get('title') or '').strip()
     if not title:
         return jsonify({"error": "Title required"}), 400
-    if len(title) > 255:
-        return jsonify({"error": "Title too long (max 255)"}), 400
+    if len(title) > MAX_LEN_EXPENSE_TITLE:
+        return jsonify({"error": f"Title too long (max {MAX_LEN_EXPENSE_TITLE})"}), 400
     try:
         amount = to_decimal(data.get('amount'), 'amount')
         if amount <= 0:
@@ -61,7 +62,7 @@ def manage_expenses():
         with db_cursor(commit=True) as cur:
             cur.execute(
                 "INSERT INTO expenses (title, amount, category, notes, user_id, expense_date) VALUES (%s,%s,%s,%s,%s,COALESCE(%s::date, CURRENT_DATE)) RETURNING expense_id",
-                (title, amount, (data.get('category') or get_setting("default_expense_category") or SETTING_DEFAULTS["default_expense_category"])[:100], data.get('notes'),
+                (title, amount, (data.get('category') or get_setting("default_expense_category") or SETTING_DEFAULTS["default_expense_category"])[:MAX_LEN_EXPENSE_CATEGORY], data.get('notes'),
                  session['user_id'], expense_date or None))
             eid = cur.fetchone()['expense_id']
     except Exception as e:

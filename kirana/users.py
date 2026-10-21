@@ -3,24 +3,30 @@ from flask import Blueprint, jsonify, request, session
 from werkzeug.security import generate_password_hash
 
 from .auth import admin_required, login_required
+from .constants import (
+    MAX_LEN_FULL_NAME,
+    MAX_LEN_USERNAME,
+    MIN_PASSWORD_LEN,
+    ROLE_ADMIN,
+    ROLE_STAFF,
+)
 from .db import UNIQUE_ERRORS, db_cursor
 
 users_bp = Blueprint("users", __name__)
 
-MIN_PASSWORD_LEN = 6
-ROLES = ("admin", "staff")
+ROLES = (ROLE_ADMIN, ROLE_STAFF)
 
 
 def _validate_payload(data, is_create):
     username = (data.get('username') or '').strip()
     if not username:
         raise ValueError("Username is required")
-    if len(username) > 50:
-        raise ValueError("Username too long (max 50)")
+    if len(username) > MAX_LEN_USERNAME:
+        raise ValueError(f"Username too long (max {MAX_LEN_USERNAME})")
     full_name = (data.get('full_name') or '').strip() or None
-    if full_name and len(full_name) > 100:
-        raise ValueError("Full name too long (max 100)")
-    role = (data.get('role') or '').strip() or 'staff'
+    if full_name and len(full_name) > MAX_LEN_FULL_NAME:
+        raise ValueError(f"Full name too long (max {MAX_LEN_FULL_NAME})")
+    role = (data.get('role') or '').strip() or ROLE_STAFF
     if role not in ROLES:
         raise ValueError("Role must be admin or staff")
     password = data.get('password') or ''
@@ -33,9 +39,9 @@ def _validate_payload(data, is_create):
 
 def _admin_count(cur, exclude_uid=None):
     if exclude_uid:
-        cur.execute("SELECT COUNT(*) AS n FROM app_users WHERE role='admin' AND user_id <> %s", (exclude_uid,))
+        cur.execute("SELECT COUNT(*) AS n FROM app_users WHERE role=%s AND user_id <> %s", (ROLE_ADMIN, exclude_uid))
     else:
-        cur.execute("SELECT COUNT(*) AS n FROM app_users WHERE role='admin'")
+        cur.execute("SELECT COUNT(*) AS n FROM app_users WHERE role=%s", (ROLE_ADMIN,))
     return cur.fetchone()['n']
 
 
@@ -80,7 +86,7 @@ def user_detail(uid):
             username, full_name, role, password = _validate_payload(data, is_create=False)
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
-        if uid == session.get('user_id') and role != 'admin':
+        if uid == session.get('user_id') and role != ROLE_ADMIN:
             return jsonify({"error": "You cannot demote your own account"}), 400
         try:
             with db_cursor(commit=True) as cur:
@@ -88,7 +94,7 @@ def user_detail(uid):
                 row = cur.fetchone()
                 if not row:
                     return jsonify({"error": "User not found"}), 404
-                if row['role'] == 'admin' and role != 'admin' and _admin_count(cur, exclude_uid=uid) < 1:
+                if row['role'] == ROLE_ADMIN and role != ROLE_ADMIN and _admin_count(cur, exclude_uid=uid) < 1:
                     return jsonify({"error": "Cannot demote the last admin"}), 400
                 if password:
                     cur.execute("UPDATE app_users SET username=%s, full_name=%s, role=%s, password_hash=%s WHERE user_id=%s",
@@ -113,7 +119,7 @@ def user_detail(uid):
             row = cur.fetchone()
             if not row:
                 return jsonify({"error": "User not found"}), 404
-            if row['role'] == 'admin' and _admin_count(cur, exclude_uid=uid) < 1:
+            if row['role'] == ROLE_ADMIN and _admin_count(cur, exclude_uid=uid) < 1:
                 return jsonify({"error": "Cannot delete the last admin"}), 400
             cur.execute("DELETE FROM app_users WHERE user_id=%s", (uid,))
     except Exception as e:

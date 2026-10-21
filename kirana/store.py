@@ -4,6 +4,15 @@ import os
 from flask import Blueprint, Response, jsonify, request, send_from_directory
 
 from .auth import admin_required, login_required
+from .constants import (
+    ALLOWED_LOGO_EXTENSIONS,
+    BACKUP_PG_DUMP_TIMEOUT,
+    BACKUP_PSQL_TIMEOUT,
+    BACKUP_STDERR_PREVIEW_LEN,
+    LOGO_CACHE_SECONDS,
+    MAX_LOGO_BYTES,
+    ROLE_ADMIN,
+)
 from .db import BASE_DIR, DATA_DIR, POINTER_ACTIVE_KEY, POINTER_URL_KEY, db_cursor
 from .settings import SETTING_DEFAULTS, catalog_meta, get_all_settings, save_settings, validate_settings
 
@@ -14,8 +23,7 @@ try:
     os.makedirs(LOGO_DIR, exist_ok=True)
 except OSError:
     pass
-ALLOWED_LOGO_EXTS = {"png", "jpg", "jpeg", "webp", "gif"}
-MAX_LOGO_BYTES = 2 * 1024 * 1024
+ALLOWED_LOGO_EXTS = ALLOWED_LOGO_EXTENSIONS
 
 
 def uploaded_logo_url():
@@ -46,7 +54,7 @@ def store_info():
 @store_bp.route('/uploads/<path:filename>')
 def uploaded_logo_file(filename):
     """Serve logos from the writable data dir (works in bundled desktop mode)."""
-    return send_from_directory(LOGO_DIR, filename, max_age=3600)
+    return send_from_directory(LOGO_DIR, filename, max_age=LOGO_CACHE_SECONDS)
 
 
 @store_bp.route('/api/store-info', methods=['GET'])
@@ -79,7 +87,7 @@ def manage_settings():
         return jsonify(out)
     # PUT - admin only
     from flask import session
-    if session.get('role') != 'admin':
+    if session.get('role') != ROLE_ADMIN:
         return jsonify({"error": "Administrator privileges required"}), 403
     data = request.get_json(silent=True) or {}
     if any(k in data for k in ("active_db", "remote_database_url",
@@ -181,7 +189,7 @@ def _sync_users_to_url(url):
                      u["role"], u["full_name"]))
             cur.execute("SELECT setval(pg_get_serial_sequence('app_users', 'user_id'), "
                         "(SELECT COALESCE(MAX(user_id), 1) FROM app_users))")
-            cur.execute("SELECT COUNT(*) AS n FROM app_users WHERE role = 'admin'")
+            cur.execute("SELECT COUNT(*) AS n FROM app_users WHERE role = %s", (ROLE_ADMIN,))
             admins = cur.fetchone()["n"]
         conn.commit()
     except Exception:
@@ -423,9 +431,9 @@ def download_backup():
             return jsonify({"error": str(e)}), 500
 
         if fmt == 'sql':
-            proc = subprocess.run(_dump_argv(dsn), capture_output=True, text=True, timeout=300)
+            proc = subprocess.run(_dump_argv(dsn), capture_output=True, text=True, timeout=BACKUP_PG_DUMP_TIMEOUT)
             if proc.returncode != 0:
-                return jsonify({"error": f"pg_dump failed: {(proc.stderr or '')[:500]}"}), 500
+                return jsonify({"error": f"pg_dump failed: {(proc.stderr or '')[:BACKUP_STDERR_PREVIEW_LEN]}"}), 500
             body = "\n".join([DUMP_MARKER,
                               f"-- exported: {datetime.now().isoformat(timespec='seconds')} — restore via Master Data ▸ Backup & Restore",
                               _strip_pointer_rows(proc.stdout)])
@@ -445,9 +453,9 @@ def download_backup():
                 select = _csv_select(table)
                 p = subprocess.run(["psql", dsn, "-q", "-c",
                                     f"COPY ({select}) TO STDOUT WITH (FORMAT csv, HEADER true)"],
-                                   capture_output=True, timeout=120)
+                                   capture_output=True, timeout=BACKUP_PSQL_TIMEOUT)
                 if p.returncode != 0:
-                    return jsonify({"error": f"psql COPY {table} failed: {(p.stderr or b'')[:300]!r}"}), 500
+                    return jsonify({"error": f"psql COPY {table} failed: {(p.stderr or b'')[:BACKUP_STDERR_PREVIEW_LEN]!r}"}), 500
                 zf.writestr(f"{table}.csv", p.stdout)
                 counts[table] = max(0, p.stdout.count(b"\n") - 1)
         log_activity("store.backup", entity="store",

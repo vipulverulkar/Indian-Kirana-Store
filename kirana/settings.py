@@ -11,6 +11,33 @@ store profile (so existing .env installs keep working).
 import os
 from decimal import Decimal, InvalidOperation
 
+from .constants import (
+    ALL_PAYMENT_MODES,
+    ALL_UNITS,
+    DEFAULT_EXPENSE_CATEGORY,
+    DEFAULT_INVOICE_FOOTER,
+    DEFAULT_PAYMENT_MODE,
+    DEFAULT_STORE_LOCATION,
+    DEFAULT_STORE_NAME,
+    DEFAULT_UNIT,
+    MAX_DISCOUNT_ALLOWED_PCT,
+    MAX_GST_SLAB,
+    MAX_LEN_EXPENSE_CATEGORY,
+    MAX_LEN_GSTIN,
+    MAX_LEN_INVOICE_FOOTER,
+    MAX_LEN_STORE_ADDRESS,
+    MAX_LEN_STORE_LOCATION,
+    MAX_LEN_STORE_NAME,
+    MAX_LEN_STORE_PHONE_COL,
+    MAX_LEN_STORE_PHONE_MAX,
+    MAX_LEN_STORE_PHONE_MIN,
+    MAX_LEN_UPI_ID,
+    MAX_LOYALTY_EARN_PER_RS,
+    MAX_REDEEM_CAP_PCT,
+    MIN_DISCOUNT_PCT,
+    MIN_GST_SLAB,
+    MIN_LOYALTY_EARN_PER_RS,
+)
 from .db import db_cursor
 from .utils import to_decimal
 
@@ -25,30 +52,30 @@ CREATE TABLE IF NOT EXISTS store_settings (
 # Canonical defaults (strings — the table stores TEXT).
 SETTING_DEFAULTS = {
     # --- Store profile ---
-    "store_name": "KiranaPro",
-    "store_location": "Default Location",
+    "store_name": DEFAULT_STORE_NAME,
+    "store_location": DEFAULT_STORE_LOCATION,
     "store_address": "",
     "store_phone": "",
     "store_gstin": "",
     "upi_id": "",
-    "invoice_footer": "Thank you, visit again!",
+    "invoice_footer": DEFAULT_INVOICE_FOOTER,
     # --- Billing ---
-    "default_payment_mode": "Cash",
+    "default_payment_mode": DEFAULT_PAYMENT_MODE,
     "max_discount_pct": "50",
-    "default_expense_category": "General",
+    "default_expense_category": DEFAULT_EXPENSE_CATEGORY,
     "gst_slabs": "0,5,12,18,28",
     # --- Loyalty & Udhaar ---
     "default_credit_limit": "10000",
     "loyalty_earn_per_rs": "100",
     "loyalty_redeem_cap_pct": "20",
     # --- Inventory (new-product defaults) ---
-    "default_unit": "packet",
+    "default_unit": DEFAULT_UNIT,
     "default_gst_slab": "5",
     "default_min_threshold": "5",
 }
 
-PAYMENT_MODES = ("Cash", "UPI", "Card", "Udhaar")
-UNITS = ("kg", "packet", "bottle", "piece", "L", "g")
+PAYMENT_MODES = ALL_PAYMENT_MODES
+UNITS = ALL_UNITS
 
 
 def ensure_settings_table():
@@ -112,39 +139,39 @@ def validate_settings(payload):
         if key == "store_name":
             if not v:
                 raise ValueError("Store name is required")
-            if len(v) > 100:
-                raise ValueError("Store name too long (max 100)")
+            if len(v) > MAX_LEN_STORE_NAME:
+                raise ValueError(f"Store name too long (max {MAX_LEN_STORE_NAME})")
             cleaned[key] = v
         elif key in ("store_location",):
-            if len(v) > 200:
-                raise ValueError("Store location too long (max 200)")
+            if len(v) > MAX_LEN_STORE_LOCATION:
+                raise ValueError(f"Store location too long (max {MAX_LEN_STORE_LOCATION})")
             cleaned[key] = v
         elif key == "store_address":
-            if len(v) > 500:
-                raise ValueError("Store address too long (max 500)")
+            if len(v) > MAX_LEN_STORE_ADDRESS:
+                raise ValueError(f"Store address too long (max {MAX_LEN_STORE_ADDRESS})")
             cleaned[key] = v
         elif key == "store_phone":
-            if v and (len(v) < 6 or len(v) > 15):
-                raise ValueError("Phone must be 6–15 characters")
-            if len(v) > 30:
+            if v and (len(v) < MAX_LEN_STORE_PHONE_MIN or len(v) > MAX_LEN_STORE_PHONE_MAX):
+                raise ValueError(f"Phone must be {MAX_LEN_STORE_PHONE_MIN}–{MAX_LEN_STORE_PHONE_MAX} characters")
+            if len(v) > MAX_LEN_STORE_PHONE_COL:
                 raise ValueError("Phone too long")
             cleaned[key] = v
         elif key == "invoice_footer":
-            if len(v) > 500:
-                raise ValueError("Invoice footer too long (max 500)")
+            if len(v) > MAX_LEN_INVOICE_FOOTER:
+                raise ValueError(f"Invoice footer too long (max {MAX_LEN_INVOICE_FOOTER})")
             cleaned[key] = v
         elif key == "store_gstin":
             if v:
                 compact = v.replace(" ", "").upper()
-                if len(compact) != 15 or not compact.isalnum():
-                    raise ValueError("GSTIN must be 15 letters/digits (or blank)")
+                if len(compact) != MAX_LEN_GSTIN or not compact.isalnum():
+                    raise ValueError(f"GSTIN must be {MAX_LEN_GSTIN} letters/digits (or blank)")
                 cleaned[key] = compact
             else:
                 cleaned[key] = ""
         elif key == "upi_id":
             if v:
-                if "@" not in v or len(v) > 100:
-                    raise ValueError("UPI ID looks like name@bank (max 100)")
+                if "@" not in v or len(v) > MAX_LEN_UPI_ID:
+                    raise ValueError(f"UPI ID looks like name@bank (max {MAX_LEN_UPI_ID})")
                 cleaned[key] = v
             else:
                 cleaned[key] = ""
@@ -155,8 +182,8 @@ def validate_settings(payload):
         elif key == "default_expense_category":
             if not v:
                 raise ValueError("Default expense category is required")
-            if len(v) > 100:
-                raise ValueError("Expense category too long (max 100)")
+            if len(v) > MAX_LEN_EXPENSE_CATEGORY:
+                raise ValueError(f"Expense category too long (max {MAX_LEN_EXPENSE_CATEGORY})")
             cleaned[key] = v
         elif key == "gst_slabs":
             parts = [p.strip() for p in v.split(",") if p.strip()]
@@ -165,14 +192,14 @@ def validate_settings(payload):
             cleaned_parts = []
             for p in parts:
                 d = to_decimal(p, "gst_slabs")
-                if d < 0 or d > 100:
-                    raise ValueError("Each GST slab must be 0–100")
+                if d < MIN_GST_SLAB or d > MAX_GST_SLAB:
+                    raise ValueError(f"Each GST slab must be {MIN_GST_SLAB}–{MAX_GST_SLAB}")
                 cleaned_parts.append(str(d))
             cleaned[key] = ",".join(cleaned_parts)
         elif key == "max_discount_pct":
             d = to_decimal(v, key)
-            if d < 0 or d > 90:
-                raise ValueError("Max discount must be 0–90%")
+            if d < MIN_DISCOUNT_PCT or d > MAX_DISCOUNT_ALLOWED_PCT:
+                raise ValueError(f"Max discount must be {MIN_DISCOUNT_PCT}–{MAX_DISCOUNT_ALLOWED_PCT}%")
             cleaned[key] = str(d)
         elif key == "default_credit_limit":
             d = to_decimal(v, key)
@@ -184,13 +211,13 @@ def validate_settings(payload):
                 n = int(float(v))
             except (TypeError, ValueError):
                 raise ValueError("Loyalty earn rate must be a number")
-            if n < 1 or n > 100000:
-                raise ValueError("Spend per point must be 1–100000")
+            if n < MIN_LOYALTY_EARN_PER_RS or n > MAX_LOYALTY_EARN_PER_RS:
+                raise ValueError(f"Spend per point must be {MIN_LOYALTY_EARN_PER_RS}–{MAX_LOYALTY_EARN_PER_RS}")
             cleaned[key] = str(n)
         elif key == "loyalty_redeem_cap_pct":
             d = to_decimal(v, key)
-            if d < 0 or d > 100:
-                raise ValueError("Redeem cap must be 0–100%")
+            if d < 0 or d > MAX_REDEEM_CAP_PCT:
+                raise ValueError(f"Redeem cap must be 0–{MAX_REDEEM_CAP_PCT}%")
             cleaned[key] = str(d)
         elif key == "default_unit":
             if v not in UNITS:
@@ -198,8 +225,8 @@ def validate_settings(payload):
             cleaned[key] = v
         elif key == "default_gst_slab":
             d = to_decimal(v, key)
-            if d < 0 or d > 100:
-                raise ValueError("GST slab must be between 0 and 100")
+            if d < MIN_GST_SLAB or d > MAX_GST_SLAB:
+                raise ValueError(f"GST slab must be between {MIN_GST_SLAB} and {MAX_GST_SLAB}")
             cleaned[key] = str(d)
         elif key == "default_min_threshold":
             d = to_decimal(v, key)

@@ -27,6 +27,20 @@ from datetime import date, datetime
 from decimal import Decimal
 from urllib.parse import urlparse
 
+from .constants import (
+    DEFAULT_ADMIN_FULL_NAME,
+    DEFAULT_ADMIN_PASSWORD,
+    DEFAULT_ADMIN_USERNAME,
+    DEFAULT_STAFF_FULL_NAME,
+    DEFAULT_STAFF_PASSWORD,
+    DEFAULT_STAFF_USERNAME,
+    MAX_LEN_DB_VERSION,
+    ROLE_ADMIN,
+    ROLE_STAFF,
+    SQLITE_CONNECT_TIMEOUT,
+    SQLITE_DB_FILENAME,
+)
+
 try:  # Optional: SQLite-only installs do not need PostgreSQL support.
     import psycopg2
     import psycopg2.errors
@@ -163,7 +177,7 @@ def _sqlite_path():
     url = _database_url()
     if url and _is_sqlite_url(url):
         return _sqlite_path_from_url(url)
-    return os.path.join(DATA_DIR, "kirana.db")
+    return os.path.join(DATA_DIR, SQLITE_DB_FILENAME)
 
 
 def _local_backend():
@@ -421,7 +435,7 @@ class SQLiteConnection:
             parent = os.path.dirname(path)
             if parent:
                 os.makedirs(parent, exist_ok=True)
-        self._conn = sqlite3.connect(path, timeout=30)
+        self._conn = sqlite3.connect(path, timeout=SQLITE_CONNECT_TIMEOUT)
         self._conn.row_factory = _sqlite_dict_factory
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.execute("PRAGMA busy_timeout=10000")
@@ -494,7 +508,7 @@ def ensure_local_database():
         parent = os.path.dirname(path)
         if parent:
             os.makedirs(parent, exist_ok=True)
-        conn = sqlite3.connect(path, timeout=30)
+        conn = sqlite3.connect(path, timeout=SQLITE_CONNECT_TIMEOUT)
         try:
             had_products = conn.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='products'"
@@ -516,12 +530,12 @@ def ensure_local_database():
             if not n_users:
                 from werkzeug.security import generate_password_hash
                 users = [
-                    (os.getenv("SEED_ADMIN_USER", "admin"),
-                     generate_password_hash(os.getenv("SEED_ADMIN_PASSWORD", "admin123")),
-                     "admin", "Store Owner"),
-                    (os.getenv("SEED_STAFF_USER", "staff"),
-                     generate_password_hash(os.getenv("SEED_STAFF_PASSWORD", "staff123")),
-                     "staff", "Counter Staff"),
+                    (os.getenv("SEED_ADMIN_USER", DEFAULT_ADMIN_USERNAME),
+                     generate_password_hash(os.getenv("SEED_ADMIN_PASSWORD", DEFAULT_ADMIN_PASSWORD)),
+                     ROLE_ADMIN, DEFAULT_ADMIN_FULL_NAME),
+                    (os.getenv("SEED_STAFF_USER", DEFAULT_STAFF_USERNAME),
+                     generate_password_hash(os.getenv("SEED_STAFF_PASSWORD", DEFAULT_STAFF_PASSWORD)),
+                     ROLE_STAFF, DEFAULT_STAFF_FULL_NAME),
                 ]
                 for username, pw_hash, role, full_name in users:
                     conn.execute(
@@ -582,7 +596,7 @@ def test_db_url(url, timeout=5):
         except Exception:
             pass
     info = parse_db_url(url)
-    info["version"] = (version or "")[:120]
+    info["version"] = (version or "")[:MAX_LEN_DB_VERSION]
     return info
 
 

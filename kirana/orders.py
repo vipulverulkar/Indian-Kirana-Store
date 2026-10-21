@@ -4,6 +4,23 @@ from decimal import Decimal, ROUND_HALF_UP
 from flask import Blueprint, jsonify, request, session
 
 from .auth import login_required
+from .constants import (
+    DEFAULT_ORDER_LIMIT,
+    DEFAULT_PURCHASE_REMARK,
+    DEFAULT_REPAYMENT_REMARK,
+    DEFAULT_RETURN_REASON,
+    MAX_LEN_RETURN_REASON,
+    MAX_ORDER_FETCH_LIMIT,
+    ORDER_STATUS_COMPLETED,
+    ORDER_STATUS_PARTIALLY_RETURNED,
+    ORDER_STATUS_RETURNED,
+    PAYMENT_MODE_UDHAAR,
+    PAYMENT_STATUS_PAID,
+    PAYMENT_STATUS_PENDING,
+    PAYMENT_STATUS_REFUNDED,
+    TXN_CREDIT,
+    TXN_DEBIT,
+)
 from .db import db_cursor
 from .settings import PAYMENT_MODES, SETTING_DEFAULTS, get_decimal_setting, get_int_setting
 from .utils import get_pagination, page_meta, to_decimal
@@ -15,7 +32,7 @@ orders_bp = Blueprint("orders", __name__)
 @login_required
 def get_orders():
     try:
-        limit = max(1, min(int(request.args.get('limit', 100)), 500))
+        limit = max(1, min(int(request.args.get('limit', DEFAULT_ORDER_LIMIT)), MAX_ORDER_FETCH_LIMIT))
     except (ValueError, TypeError):
         return jsonify({"error": "Invalid limit"}), 400
     page, per_page = get_pagination()
@@ -66,7 +83,7 @@ def checkout():
     data = request.get_json(silent=True) or {}
     customer_id = data.get('customer_id')
     items = data.get('items')
-    payment_mode = data.get('payment_mode', 'Cash')
+    payment_mode = data.get('payment_mode', PAYMENT_MODES[0])
     discount_pct = data.get('discount_pct', 0) or 0
     try:
         redeem_points = int(float(data.get('redeem_points') or 0))
@@ -141,11 +158,13 @@ def checkout():
                     'sgst_amount': sgst, 'line_total': line_total
                 })
 
-            final_invoice_amount = total_amount + total_cgst + total_sgst
+            # Track gross invoice (before loyalty redemption) for lifetime_spend.
+            # Points are earned on the net amount actually paid (final_invoice_amount).
+            gross_invoice_amount = total_amount + total_cgst + total_sgst
 
             # --- Discount (on subtotal+tax) ---
-            discount_amount = (final_invoice_amount * (discount_pct / 100)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            final_invoice_amount -= discount_amount
+            discount_amount = (gross_invoice_amount * (discount_pct / 100)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            final_invoice_amount = gross_invoice_amount - discount_amount
 
             # --- Loyalty redemption: 1 point = ₹1, capped at redeem_cap% of bill ---
             loyalty_redeemed_value = Decimal('0.00')
@@ -174,7 +193,7 @@ def checkout():
                     if final_invoice_amount < 0:
                         final_invoice_amount = Decimal('0.00')
 
-            if payment_mode == 'Udhaar':
+            if payment_mode == PAYMENT_MODE_UDHAAR:
                 if not customer_id:
                     raise Exception("Customer selection required for Udhaar")
                 credit_limit = Decimal(str(customer_row['credit_limit']))
@@ -186,7 +205,7 @@ def checkout():
                 """INSERT INTO orders (customer_id, user_id, total_amount, total_cgst, total_sgst, total_profit, payment_mode, payment_status, final_invoice_amount, discount_amount, loyalty_redeemed)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING order_id""",
                 (customer_id, session['user_id'], total_amount, total_cgst, total_sgst, total_profit,
-                 payment_mode, 'Paid' if payment_mode != 'Udhaar' else 'Pending', final_invoice_amount,
+                 payment_mode, PAYMENT_STATUS_PAID if payment_mode != PAYMENT_MODE_UDHAAR else PAYMENT_STATUS_PENDING, final_invoice_amount,
                  discount_amount, loyalty_points_used)
             )
             order_id = cur.fetchone()['order_id']
@@ -201,18 +220,22 @@ def checkout():
                 cur.execute("UPDATE products SET stock_quantity = stock_quantity - %s WHERE product_id = %s",
                             (item['quantity'], item['product_id']))
 
-            if payment_mode == 'Udhaar':
+            if payment_mode == PAYMENT_MODE_UDHAAR:
                 cur.execute(
                     "INSERT INTO udhaar_ledger (customer_id, order_id, amount, transaction_type, remarks) VALUES (%s, %s, %s, %s, %s)",
-                    (customer_id, order_id, final_invoice_amount, 'Debit', 'Purchase on credit')
+                    (customer_id, order_id, final_invoice_amount, TXN_DEBIT, DEFAULT_PURCHASE_REMARK)
                 )
                 cur.execute("UPDATE customers SET current_balance = current_balance + %s WHERE customer_id = %s",
                             (final_invoice_amount, customer_id))
 
             if customer_id:
                 points = int(final_invoice_amount // earn_per_rs) if earn_per_rs > 0 else 0
+                # lifetime_spend should reflect the bill value after discount but before
+                # loyalty redemption (i.e. what the customer committed to spend).
+                # final_invoice_amount has already been reduced by loyalty_redeemed_value.
+                bill_value_for_spend = final_invoice_amount + loyalty_redeemed_value
                 cur.execute("UPDATE customers SET loyalty_points = loyalty_points - %s + %s, lifetime_spend = lifetime_spend + %s WHERE customer_id = %s",
-                            (loyalty_points_used, points, final_invoice_amount, customer_id))
+                            (loyalty_points_used, points, bill_value_for_spend, customer_id))
 
         return jsonify({"status": "success", "order_id": order_id, "final_amount": float(final_invoice_amount),
                         "discount": float(discount_amount), "redeemed": loyalty_points_used})
@@ -226,7 +249,7 @@ def return_order_items(oid):
     """Partial/full return. Body: {items: [{product_id, quantity}], reason}. Restocks + adjusts Udhaar dues."""
     data = request.get_json(silent=True) or {}
     items = data.get('items') or []
-    reason = (data.get('reason') or 'Customer return')[:500]
+    reason = (data.get('reason') or DEFAULT_RETURN_REASON)[:MAX_LEN_RETURN_REASON]
     if not isinstance(items, list) or not items:
         return jsonify({"status": "error", "message": "No return items"}), 400
     try:
@@ -235,7 +258,7 @@ def return_order_items(oid):
             order = cur.fetchone()
             if not order:
                 return jsonify({"status": "error", "message": "Order not found"}), 404
-            if (order.get('order_status') or 'Completed') == 'Returned':
+            if (order.get('order_status') or ORDER_STATUS_COMPLETED) == ORDER_STATUS_RETURNED:
                 return jsonify({"status": "error", "message": "Order already fully returned"}), 400
             # Prorate refunds when the original bill had discounts / loyalty redemption
             gross = (Decimal(str(order.get('total_amount') or 0)) + Decimal(str(order.get('total_cgst') or 0))
@@ -269,21 +292,23 @@ def return_order_items(oid):
                     (oid, pid, qty, refund, reason, session['user_id']))
                 cur.execute("UPDATE products SET stock_quantity = stock_quantity + %s WHERE product_id=%s", (qty, pid))
             # Adjust Udhaar dues if original was on credit
-            if order.get('payment_mode') == 'Udhaar' and order.get('customer_id'):
+            if order.get('payment_mode') == PAYMENT_MODE_UDHAAR and order.get('customer_id'):
                 cur.execute("UPDATE customers SET current_balance = GREATEST(0, current_balance - %s) WHERE customer_id=%s",
                             (total_refund, order['customer_id']))
                 cur.execute(
-                    "INSERT INTO udhaar_ledger (customer_id, order_id, amount, transaction_type, remarks) VALUES (%s,%s,%s,'Credit',%s)",
-                    (order['customer_id'], oid, total_refund, f'Return: {reason}'))
+                    "INSERT INTO udhaar_ledger (customer_id, order_id, amount, transaction_type, remarks) VALUES (%s,%s,%s,%s,%s)",
+                    (order['customer_id'], oid, total_refund, TXN_CREDIT, f'Return: {reason}'))
             # Mark fully returned?
             cur.execute("SELECT COALESCE(SUM(oi.quantity),0) AS bought FROM order_items oi WHERE oi.order_id=%s", (oid,))
             bought = Decimal(str(cur.fetchone()['bought']))
             cur.execute("SELECT COALESCE(SUM(quantity),0) AS ret FROM returns WHERE order_id=%s", (oid,))
             ret = Decimal(str(cur.fetchone()['ret']))
             if ret >= bought:
-                cur.execute("UPDATE orders SET order_status='Returned', payment_status='Refunded' WHERE order_id=%s", (oid,))
+                cur.execute("UPDATE orders SET order_status=%s, payment_status=%s WHERE order_id=%s",
+                            (ORDER_STATUS_RETURNED, PAYMENT_STATUS_REFUNDED, oid))
             else:
-                cur.execute("UPDATE orders SET order_status='Partially Returned' WHERE order_id=%s", (oid,))
+                cur.execute("UPDATE orders SET order_status=%s WHERE order_id=%s",
+                            (ORDER_STATUS_PARTIALLY_RETURNED, oid))
         from .activity import log_activity
         log_activity("order.return", entity="order", entity_id=oid,
                      detail=f"Rs.{total_refund} ({reason})")

@@ -4,6 +4,7 @@ import os
 from flask import Blueprint, jsonify, redirect, render_template, session, url_for
 
 from .config import app_version
+from .constants import DEFAULT_STORE_LOCATION, DEFAULT_STORE_NAME
 from .db import db_cursor, db_mode, db_target_info
 from .settings import get_all_settings
 from .store import uploaded_logo_url
@@ -17,8 +18,8 @@ def index():
         return redirect(url_for('auth.login'))
     s = get_all_settings()
     return render_template('index.html',
-                           store_name=s.get("store_name", "KiranaPro"),
-                           store_location=s.get("store_location", "Default Location"),
+                           store_name=s.get("store_name", DEFAULT_STORE_NAME),
+                           store_location=s.get("store_location", DEFAULT_STORE_LOCATION),
                            store_address=s.get("store_address", ""),
                            store_phone=s.get("store_phone", ""),
                            store_logo=os.getenv("STORE_LOGO", "") or uploaded_logo_url())

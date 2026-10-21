@@ -4,13 +4,11 @@ from datetime import date, datetime
 from flask import Blueprint, jsonify, request, session
 
 from .auth import admin_required, login_required
+from .constants import MAX_REPORT_YEAR, MIN_REPORT_YEAR, ROLE_ADMIN
 from .db import db_cursor
 from .utils import get_pagination, page_meta, parse_date_yyyy_mm_dd
 
 reports_bp = Blueprint("reports", __name__)
-
-MIN_REPORT_YEAR = 2000
-MAX_REPORT_YEAR = 2100
 
 
 @reports_bp.route('/api/reports/z-report', methods=['GET'])
@@ -63,7 +61,7 @@ def get_z_report():
         month_names = [datetime(2000, m, 1).strftime('%b') for m in range(1, 13)]
         series_keys = [(m, month_names[m - 1]) for m in range(1, 13)]
 
-    is_admin = session.get('role') == 'admin'
+    is_admin = session.get('role') == ROLE_ADMIN
     try:
         with db_cursor() as cur:
             cur.execute(f"""
@@ -152,7 +150,7 @@ def dashboard_stats():
             today_expenses = cur.fetchone()['t']
             cur.execute("SELECT COALESCE(SUM(final_invoice_amount),0) AS r, COALESCE(SUM(total_profit),0) AS p, COUNT(*) AS c FROM orders WHERE order_date::date = CURRENT_DATE")
             today = cur.fetchone()
-        is_admin = session.get('role') == 'admin'
+        is_admin = session.get('role') == ROLE_ADMIN
         if not is_admin:
             # Staff-safe: hide profit & expense/cost figures (mirrors z-report)
             for w in weekly:

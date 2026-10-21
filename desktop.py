@@ -97,10 +97,11 @@ def main(argv=None):
 
     from kirana import create_app
     from kirana.config import app_version
+    from kirana.constants import DEFAULT_PORT
     from werkzeug.serving import make_server
 
     app = create_app()
-    preferred = args.port or int(os.getenv("KIRANA_PORT") or os.getenv("PORT") or 5000)
+    preferred = args.port or int(os.getenv("KIRANA_PORT") or os.getenv("PORT") or DEFAULT_PORT)
     port = _pick_port(preferred)
     server = make_server("127.0.0.1", port, app, threaded=True)
     threading.Thread(target=server.serve_forever, daemon=True).start()

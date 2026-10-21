@@ -21,6 +21,16 @@ from werkzeug.security import generate_password_hash
 
 load_dotenv()
 
+from kirana.constants import (
+    DEFAULT_ADMIN_FULL_NAME,
+    DEFAULT_ADMIN_PASSWORD,
+    DEFAULT_ADMIN_USERNAME,
+    DEFAULT_STAFF_FULL_NAME,
+    DEFAULT_STAFF_PASSWORD,
+    DEFAULT_STAFF_USERNAME,
+    ROLE_ADMIN,
+    ROLE_STAFF,
+)
 from kirana.db import db_mode, ensure_local_database, get_db_connection
 
 ensure_local_database()
@@ -48,12 +58,12 @@ try:
     try:
         # --- Users (usernames/passwords overridable via env; defaults are demo-only) ---
         users = [
-            (os.getenv("SEED_ADMIN_USER", "admin"),
-             generate_password_hash(os.getenv("SEED_ADMIN_PASSWORD", "admin123")),
-             "admin", "Store Owner"),
-            (os.getenv("SEED_STAFF_USER", "staff"),
-             generate_password_hash(os.getenv("SEED_STAFF_PASSWORD", "staff123")),
-             "staff", "Counter Staff"),
+            (os.getenv("SEED_ADMIN_USER", DEFAULT_ADMIN_USERNAME),
+             generate_password_hash(os.getenv("SEED_ADMIN_PASSWORD", DEFAULT_ADMIN_PASSWORD)),
+             ROLE_ADMIN, DEFAULT_ADMIN_FULL_NAME),
+            (os.getenv("SEED_STAFF_USER", DEFAULT_STAFF_USERNAME),
+             generate_password_hash(os.getenv("SEED_STAFF_PASSWORD", DEFAULT_STAFF_PASSWORD)),
+             ROLE_STAFF, DEFAULT_STAFF_FULL_NAME),
         ]
         for username, pw_hash, role, full_name in users:
             if RESET_PASSWORDS:

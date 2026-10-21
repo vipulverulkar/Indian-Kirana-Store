@@ -4,6 +4,8 @@ from decimal import Decimal, InvalidOperation
 
 from flask import request
 
+from .constants import ALLOWED_PER_PAGE, DEFAULT_PER_PAGE, MAX_LEN_CATEGORY
+
 
 def to_decimal(value, field_name="value"):
     try:
@@ -62,7 +64,7 @@ def ensure_category(cur, name):
     name = (name or '').strip()
     if not name:
         return None
-    if len(name) > 100:
-        raise ValueError("Category too long (max 100)")
+    if len(name) > MAX_LEN_CATEGORY:
+        raise ValueError(f"Category too long (max {MAX_LEN_CATEGORY})")
     cur.execute("INSERT INTO categories (name) VALUES (%s) ON CONFLICT (name) DO NOTHING", (name,))
     return name

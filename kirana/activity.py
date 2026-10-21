@@ -7,6 +7,12 @@ action — failures are swallowed.
 from flask import Blueprint, jsonify, request, session
 
 from .auth import admin_required, login_required
+from .constants import (
+    MAX_LEN_ACTIVITY_ACTION,
+    MAX_LEN_ACTIVITY_DETAIL,
+    MAX_LEN_ACTIVITY_ENTITY,
+    MAX_LEN_ACTIVITY_ENTITY_ID,
+)
 from .db import active_backend, db_cursor
 from .utils import get_pagination, page_meta
 
@@ -58,10 +64,10 @@ def log_activity(action, entity=None, entity_id=None, detail=None):
                 """INSERT INTO activity_log (user_id, username, role, action, entity, entity_id, detail)
                    VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                 (session.get('user_id'), session.get('username'),
-                 session.get('role'), action[:100],
-                 (entity or '')[:100] if entity else None,
-                 str(entity_id)[:100] if entity_id is not None else None,
-                 (detail or '')[:2000] if detail else None),
+                 session.get('role'), action[:MAX_LEN_ACTIVITY_ACTION],
+                 (entity or '')[:MAX_LEN_ACTIVITY_ENTITY] if entity else None,
+                 str(entity_id)[:MAX_LEN_ACTIVITY_ENTITY_ID] if entity_id is not None else None,
+                 (detail or '')[:MAX_LEN_ACTIVITY_DETAIL] if detail else None),
             )
     except Exception:
         pass

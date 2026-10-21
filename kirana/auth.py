@@ -4,6 +4,7 @@ from functools import wraps
 from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash
 
+from .constants import ROLE_ADMIN
 from .db import db_cursor
 
 auth_bp = Blueprint("auth", __name__)
@@ -24,9 +25,12 @@ def login_required(f):
 
 def admin_required(f):
     @wraps(f)
-    @login_required
     def decorated_function(*args, **kwargs):
-        if session.get('role') != 'admin':
+        if 'user_id' not in session:
+            if request.path.startswith('/api/'):
+                return jsonify({"error": "Authentication required"}), 401
+            return redirect(url_for('auth.login'))
+        if session.get('role') != ROLE_ADMIN:
             return jsonify({"error": "Administrator privileges required"}), 403
         return f(*args, **kwargs)
     return decorated_function
