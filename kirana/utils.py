@@ -25,10 +25,6 @@ def parse_date_yyyy_mm_dd(value):
 
 
 # ---------- Pagination (page sizes selectable: 15 / 25 / 50 / 100) ----------
-ALLOWED_PER_PAGE = (15, 25, 50, 100)
-DEFAULT_PER_PAGE = 15
-
-
 def get_pagination():
     try:
         page = int(request.args.get("page", 1))

@@ -9,12 +9,11 @@ from .constants import (
     MIN_PASSWORD_LEN,
     ROLE_ADMIN,
     ROLE_STAFF,
+    ROLES,
 )
 from .db import UNIQUE_ERRORS, db_cursor
 
 users_bp = Blueprint("users", __name__)
-
-ROLES = (ROLE_ADMIN, ROLE_STAFF)
 
 
 def _validate_payload(data, is_create):

@@ -7,7 +7,6 @@ from .auth import login_required
 from .constants import (
     DEFAULT_ORDER_LIMIT,
     DEFAULT_PURCHASE_REMARK,
-    DEFAULT_REPAYMENT_REMARK,
     DEFAULT_RETURN_REASON,
     MAX_LEN_RETURN_REASON,
     MAX_ORDER_FETCH_LIMIT,

@@ -23,14 +23,13 @@ try:
     os.makedirs(LOGO_DIR, exist_ok=True)
 except OSError:
     pass
-ALLOWED_LOGO_EXTS = ALLOWED_LOGO_EXTENSIONS
 
 
 def uploaded_logo_url():
     """URL of the admin-uploaded logo, or '' if none."""
     try:
         for fn in os.listdir(LOGO_DIR):
-            if fn.startswith("store_logo.") and fn.rsplit(".", 1)[-1].lower() in ALLOWED_LOGO_EXTS:
+            if fn.startswith("store_logo.") and fn.rsplit(".", 1)[-1].lower() in ALLOWED_LOGO_EXTENSIONS:
                 return f"/uploads/{fn}"
     except OSError:
         pass
@@ -305,7 +304,7 @@ def manage_store_logo():
         return jsonify({"error": "Image file required (field name 'file')"}), 400
     f = request.files['file']
     ext = (f.filename or '').rsplit('.', 1)[-1].lower() if '.' in (f.filename or '') else ''
-    if ext not in ALLOWED_LOGO_EXTS:
+    if ext not in ALLOWED_LOGO_EXTENSIONS:
         return jsonify({"error": "Only PNG, JPG, WEBP or GIF images allowed"}), 400
     raw = f.read(MAX_LOGO_BYTES + 1)
     if len(raw) > MAX_LOGO_BYTES:
