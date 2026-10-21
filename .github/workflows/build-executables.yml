@@ -1,0 +1,82 @@
+name: Build Standalone Executables (Windows & Linux)
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform_name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform_name: linux
+            artifact_name: KiranaPro-linux
+            binary_path: dist/KiranaPro
+            test_cmd: ./dist/KiranaPro --help
+          - os: windows-2022
+            platform_name: windows
+            artifact_name: KiranaPro-windows
+            binary_path: dist/KiranaPro.exe
+            test_cmd: .\dist\KiranaPro.exe --help
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpq-dev
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r requirements.txt
+          pip install -r requirements-desktop.txt || pip install pyinstaller
+
+      - name: Validate code before packaging
+        run: |
+          python -m py_compile app.py desktop.py seed.py kirana/*.py
+          python -c "from kirana import create_app; app = create_app(); print('App verification passed')"
+
+      - name: Build standalone executable with PyInstaller
+        run: |
+          python -m PyInstaller --clean --noconfirm kirana.spec
+
+      - name: Smoke test standalone executable
+        run: |
+          ${{ matrix.test_cmd }}
+
+      - name: Upload executable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.binary_path }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload to GitHub Release
+        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.binary_path }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

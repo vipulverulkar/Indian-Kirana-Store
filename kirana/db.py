@@ -63,13 +63,31 @@ def _default_data_dir():
         return os.path.abspath(os.path.expanduser(override))
     if not getattr(sys, "frozen", False):
         return BASE_DIR  # source runs keep using the project folder
+    candidates = []
     if os.name == "nt":
         root = os.getenv("LOCALAPPDATA") or os.getenv("APPDATA") or os.path.expanduser("~")
-        return os.path.join(root, "KiranaPro")
-    if sys.platform == "darwin":
-        return os.path.join(os.path.expanduser("~/Library/Application Support"), "KiranaPro")
-    root = os.getenv("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
-    return os.path.join(root, "kiranapro")
+        candidates.append(os.path.join(root, "KiranaPro"))
+    elif sys.platform == "darwin":
+        candidates.append(os.path.join(os.path.expanduser("~/Library/Application Support"), "KiranaPro"))
+    else:
+        root = os.getenv("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
+        candidates.append(os.path.join(root, "kiranapro"))
+    # Fallbacks if primary dir is not writable (e.g. portable mode or restricted sandboxes)
+    exe_dir = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else BASE_DIR
+    candidates.append(os.path.join(exe_dir, "data"))
+    import tempfile
+    candidates.append(os.path.join(tempfile.gettempdir(), "kiranapro"))
+    for cand in candidates:
+        try:
+            os.makedirs(cand, exist_ok=True)
+            test_file = os.path.join(cand, ".write_test")
+            with open(test_file, "w") as f:
+                f.write("ok")
+            os.remove(test_file)
+            return cand
+        except OSError:
+            continue
+    return candidates[0]
 
 
 # Writable runtime data (SQLite DB, uploaded logo). Never inside _MEIPASS:

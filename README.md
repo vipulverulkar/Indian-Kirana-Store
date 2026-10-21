@@ -157,14 +157,20 @@ only to `127.0.0.1`, uses SQLite by default, and stores data outside the
 bundle.
 
 ```bash
-python -m pip install pyinstaller
-python -m pip install pywebview   # optional native window
-./build_desktop.sh                # Linux/macOS
-build_desktop.bat                 # Windows
+python -m pip install -r requirements.txt -r requirements-desktop.txt
+./build_desktop.sh                # Linux/macOS -> dist/KiranaPro
+build_desktop.bat                 # Windows     -> dist\KiranaPro.exe
 ```
 
 Run `dist/KiranaPro` (`dist\KiranaPro.exe` on Windows). PyInstaller is not a
-cross-compiler: build on each OS you want to ship.
+cross-compiler: build on each OS you want to ship, or download prebuilt
+executables from GitHub Actions artifacts / Releases.
+
+#### Automated GitHub Actions Builds
+The `.github/workflows/build-executables.yml` workflow automatically builds
+standalone binaries for both Windows (`KiranaPro.exe`) and Linux (`KiranaPro`)
+on every push, pull request, manual dispatch, or release tag. Built binaries
+are published as workflow artifacts and attached to GitHub Releases.
 
 Data locations (override with `KIRANA_DATA_DIR`):
 

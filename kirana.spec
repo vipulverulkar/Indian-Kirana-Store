@@ -21,6 +21,12 @@ try:
 except ImportError:
     pass
 
+try:
+    import psycopg2  # noqa: F401
+    hiddenimports += ["psycopg2", "psycopg2.errors", "psycopg2.extras"]
+except ImportError:
+    pass
+
 a = Analysis(
     ["desktop.py"],
     pathex=[],
