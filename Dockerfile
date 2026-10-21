@@ -18,7 +18,7 @@ RUN pip install -r requirements.txt
 COPY app.py seed.py init_db.sql init_db_sqlite.sql ./
 COPY kirana/ ./kirana/
 COPY templates/ ./templates/
-COPY static/ ./static/
+RUN mkdir -p ./static/uploads
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
 
